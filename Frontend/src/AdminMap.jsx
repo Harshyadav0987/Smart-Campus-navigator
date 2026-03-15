@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { MapContainer, ImageOverlay, CircleMarker, Polyline, Tooltip, useMapEvents } from "react-leaflet"
 import L from "leaflet"
+import "./AdminMap.css"
 
 const MAP_WIDTH = 4642
 const MAP_HEIGHT = 3924
@@ -16,11 +17,11 @@ function ClickHandler({ onMapClick }) {
 }
 
 export default function AdminMap() {
-    const [nodes, setNodes] = useState([])
-    const [edges, setEdges] = useState([])
-    const [mode, setMode] = useState("node")
-    const [selectedNode, setSelectedNode] = useState(null)
-    const [selectedEdge, setSelectedEdge] = useState(null)
+  const [nodes, setNodes] = useState([])
+  const [edges, setEdges] = useState([])
+  const [mode, setMode] = useState("node")
+  const [selectedNode, setSelectedNode] = useState(null)
+  const [selectedEdge, setSelectedEdge] = useState(null)
   useEffect(() => {
     fetch("http://localhost:5000/api/nodes").then(r => r.json()).then(setNodes)
     fetch("http://localhost:5000/api/edges").then(r => r.json()).then(setEdges)
@@ -55,11 +56,11 @@ export default function AdminMap() {
   async function handleNodeClick(node) {
     // Delete mode
     if (mode === "delete") {
-        if (!window.confirm(`Delete node "${node.label}"?`)) return
-        await fetch(`http://localhost:5000/api/nodes?id=${encodeURIComponent(node.id)}`, { method: "DELETE" })
-        setNodes(prev => prev.filter(n => n.id !== node.id))
-        setEdges(prev => prev.filter(e => e.from !== node.id && e.to !== node.id))
-        return
+      if (!window.confirm(`Delete node "${node.label}"?`)) return
+      await fetch(`http://localhost:5000/api/nodes?id=${encodeURIComponent(node.id)}`, { method: "DELETE" })
+      setNodes(prev => prev.filter(n => n.id !== node.id))
+      setEdges(prev => prev.filter(e => e.from !== node.id && e.to !== node.id))
+      return
     }
 
     if (mode !== "edge") return
@@ -93,124 +94,126 @@ export default function AdminMap() {
   // Get node color based on mode and type
   function getNodeColor(node) {
     if (selectedNode?.id === node.id) return "#e74c3c"
-    if (mode === "delete") return "#e74c3c"  // all nodes turn red in delete mode
+    if (mode === "delete") return "#e74c3c"
     const colors = {
-        room: "#2ecc71",
-        corridor: "#3498db",
-        stairs: "#f39c12",
-        washroom: "#9b59b6",
-        lab: "#1abc9c",
-        garden: "#27ae60",
-        faculty: "#e84393",   // ← pink color for faculty cabins
+      room: "#2ecc71",
+      corridor: "#3498db",
+      stairs: "#f39c12",
+      washroom: "#9b59b6",
+      lab: "#1abc9c",
+      garden: "#27ae60",
+      faculty: "#e84393",
     }
     return colors[node.type] || "#2ecc71"
   }
 
   return (
-    <div>
-      <div style={{
-        padding: "10px 20px",
-        background: "#1a1a2e",
-        color: "white",
-        display: "flex",
-        alignItems: "center",
-        gap: 12
-      }}>
-        <b>🏫 MITS Indoor Nav — Admin Tool</b>
+    <div className="admin-shell">
+      <div className="admin-topbar">
+        <div className="admin-title">
+          <span>🛠</span>
+          <span>MITS Indoor Nav — Admin</span>
+          <span className="admin-pill">Graph editor</span>
+        </div>
 
         <button
-          onClick={() => { setMode("node"); setSelectedNode(null) }}
-          style={{
-            padding: "6px 14px",
-            background: mode === "node" ? "#00b894" : "#555",
-            color: "white", border: "none", borderRadius: 6, cursor: "pointer"
-          }}>
-          🟢 Place Node
+          onClick={() => {
+            setMode("node")
+            setSelectedNode(null)
+          }}
+          className={`admin-button primary ${mode === "node" ? "active" : ""}`}
+        >
+          <span>🟢</span>
+          Place node
         </button>
 
         <button
-          onClick={() => { setMode("edge"); setSelectedNode(null) }}
-          style={{
-            padding: "6px 14px",
-            background: mode === "edge" ? "#e17055" : "#555",
-            color: "white", border: "none", borderRadius: 6, cursor: "pointer"
-          }}>
-          🔗 Connect Edge
+          onClick={() => {
+            setMode("edge")
+            setSelectedNode(null)
+          }}
+          className={`admin-button edge ${mode === "edge" ? "active" : ""}`}
+        >
+          <span>🔗</span>
+          Connect edge
         </button>
 
         <button
-          onClick={() => { setMode("delete"); setSelectedNode(null) }}
-          style={{
-            padding: "6px 14px",
-            background: mode === "delete" ? "#e74c3c" : "#555",
-            color: "white", border: "none", borderRadius: 6, cursor: "pointer"
-          }}>
-          🗑️ Delete Node
+          onClick={() => {
+            setMode("delete")
+            setSelectedNode(null)
+          }}
+          className={`admin-button delete ${mode === "delete" ? "active" : ""}`}
+        >
+          <span>🗑️</span>
+          Delete node
         </button>
 
-        <span style={{ marginLeft: 10, color: "#aaa" }}>
-          Nodes: <b style={{ color: "white" }}>{nodes.length}</b> |
-          Edges: <b style={{ color: "white" }}>{edges.length}</b>
-          {selectedNode && <span style={{ color: "#fdcb6e", marginLeft: 10 }}>
-            Selected: {selectedNode.label}
-          </span>}
-        </span>
+        <div className="admin-stats">
+          <span>
+            Nodes: <b>{nodes.length}</b>
+          </span>
+          <span>
+            Edges: <b>{edges.length}</b>
+          </span>
+          {selectedNode && (
+            <span className="admin-selected">Selected: {selectedNode.label}</span>
+          )}
+        </div>
 
-        {/* Mode indicator */}
-        <span style={{
-          marginLeft: "auto",
-          padding: "4px 12px",
-          borderRadius: 20,
-          fontSize: 13,
-          background: mode === "node" ? "#00b894" : mode === "edge" ? "#e17055" : "#e74c3c"
-        }}>
+        <div className="admin-mode-chip">
+          <span className="icon">
+            {mode === "node" ? "📍" : mode === "edge" ? "🧵" : "⚠️"}
+          </span>
           Mode: {mode.toUpperCase()}
-        </span>
+        </div>
       </div>
 
-      <MapContainer
-        crs={L.CRS.Simple}
-        bounds={bounds}
-        style={{ height: "calc(100vh - 50px)", width: "100%" }}
-        maxZoom={2}
-        minZoom={-3}
-        zoom={-2}
-      >
-        <ImageOverlay url="/ground_floor.png" bounds={bounds} />
-        <ClickHandler onMapClick={handleMapClick} />
+      <div className="admin-map-wrap">
+        <MapContainer
+          crs={L.CRS.Simple}
+          bounds={bounds}
+          style={{ height: "calc(100vh - 54px)", width: "100%" }}
+          maxZoom={2}
+          minZoom={-3}
+          zoom={-2}
+        >
+          <ImageOverlay url="/ground_floor.png" bounds={bounds} />
+          <ClickHandler onMapClick={handleMapClick} />
 
-        {edges.map((edge, i) => {
-          const from = nodes.find(n => n.id === edge.from)
-          const to = nodes.find(n => n.id === edge.to)
-          if (!from || !to) return null
-          return (
-            <Polyline
+          {edges.map((edge, i) => {
+            const from = nodes.find(n => n.id === edge.from)
+            const to = nodes.find(n => n.id === edge.to)
+            if (!from || !to) return null
+            return (
+              <Polyline
+                key={i}
+                positions={[[from.y, from.x], [to.y, to.x]]}
+                color={edge.isStair ? "#f39c12" : "#3498db"}
+                weight={2}
+              />
+            )
+          })}
+
+          {nodes.map((node, i) => (
+            <CircleMarker
               key={i}
-              positions={[[from.y, from.x], [to.y, to.x]]}
-              color={edge.isStair ? "#f39c12" : "#3498db"}
-              weight={2}
-            />
-          )
-        })}
-
-        {nodes.map((node, i) => (
-          <CircleMarker
-            key={i}
-            center={[node.y, node.x]}
-            radius={6}
-            pathOptions={{
-              color: getNodeColor(node),
-              fillColor: getNodeColor(node),
-              fillOpacity: 1
-            }}
-            eventHandlers={{ click: () => handleNodeClick(node) }}
-          >
-            <Tooltip permanent direction="top" offset={[0, -8]}>
-              {node.label}
-            </Tooltip>
-          </CircleMarker>
-        ))}
-      </MapContainer>
+              center={[node.y, node.x]}
+              radius={6}
+              pathOptions={{
+                color: getNodeColor(node),
+                fillColor: getNodeColor(node),
+                fillOpacity: 1
+              }}
+              eventHandlers={{ click: () => handleNodeClick(node) }}
+            >
+              <Tooltip permanent direction="top" offset={[0, -8]}>
+                {node.label}
+              </Tooltip>
+            </CircleMarker>
+          ))}
+        </MapContainer>
+      </div>
     </div>
   )
 }
