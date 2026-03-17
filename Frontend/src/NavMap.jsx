@@ -1,12 +1,25 @@
-import { useState, useEffect, useRef, useLayoutEffect } from "react"
+import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { MapContainer, ImageOverlay, CircleMarker, Polyline, Tooltip, useMapEvents } from "react-leaflet"
+import { MapContainer, ImageOverlay, CircleMarker, Polyline, Tooltip, useMap, useMapEvents } from "react-leaflet"
 import L from "leaflet"
 import "./NavMap.css"
 
-const MAP_WIDTH = 4642
-const MAP_HEIGHT = 3924
-const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]]
+const MAPS = {
+  G: { key: "G", name: "Ground", candidates: ["/ground_floor.png"] },
+  FA: { key: "FA", name: "First-A", candidates: ["/first_floor_a.png", "/first_floor_a2.png"] },
+  FB: { key: "FB", name: "First-B", candidates: ["/first_floor_b.png", "/first_floor_b1.png", "/first_floor_b2.png"] },
+  S: { key: "S", name: "Second", candidates: ["/second_floor.png", "/second_floor2.png"] },
+}
+
+function mapKeyFromNode(node) {
+  const s = String(node?.id || "")
+  if (s.startsWith("FA")) return "FA"
+  if (s.startsWith("FB")) return "FB"
+  if (s.startsWith("S")) return "S"
+  if (node?.floor === 2) return "S"
+  if (node?.floor === 1) return "FA"
+  return "G"
+}
 
 function findClosestNode(nodes, latlng) {
   let closest = null
@@ -31,19 +44,55 @@ function MapClickHandler({ nodes, onNodeClick, active }) {
   return null
 }
 
+function FitToBounds({ bounds, pad = 18 }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!bounds) return
+    map.fitBounds(bounds, { padding: [pad, pad], animate: false })
+    map.setMaxBounds(bounds)
+  }, [map, bounds, pad])
+  return null
+}
+
+function getNodeExtent(nodes) {
+  let maxX = 0
+  let maxY = 0
+  for (const n of nodes) {
+    if (typeof n?.x === "number" && n.x > maxX) maxX = n.x
+    if (typeof n?.y === "number" && n.y > maxY) maxY = n.y
+  }
+  return { maxX, maxY }
+}
+
+function loadImageSize(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = reject
+    img.src = url
+  })
+}
+
 export default function NavMap() {
   const [nodes, setNodes] = useState([])
   const [edges, setEdges] = useState([])
   const [from, setFrom] = useState(null)
   const [to, setTo] = useState(null)
   const [path, setPath] = useState([])
+  const [pathNodes, setPathNodes] = useState([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState("from")
   const [selectMode, setSelectMode] = useState(false)
+  const [activeMapKey, setActiveMapKey] = useState("G")
+  const [activeMapUrl, setActiveMapUrl] = useState(MAPS.G.candidates[0])
+  const [mapSize, setMapSize] = useState({ w: 4642, h: 3924 })
   const [search, setSearch] = useState("")
   const searchGroupRef = useRef(null)
   const [dropdownRect, setDropdownRect] = useState(null)
+  const imageSizeCacheRef = useRef(new Map())
+
+  const bounds = useMemo(() => [[0, 0], [mapSize.h, mapSize.w]], [mapSize])
 
   useEffect(() => {
     fetch("http://localhost:5000/api/nodes").then(r => r.json()).then(setNodes)
@@ -54,6 +103,73 @@ export default function NavMap() {
     ["room", "lab", "washroom", "faculty", "stairs"].includes(n.type)
   )
 
+  const nodesOnActiveMap = useMemo(
+    () => nodes.filter(n => mapKeyFromNode(n) === activeMapKey),
+    [nodes, activeMapKey]
+  )
+
+  // Pick the best-fitting floor image based on node coordinate extents.
+  // This fixes cases where you have multiple PNG variants per floor (b1/b2/etc)
+  // and nodes were mapped against a different-sized PNG.
+  useEffect(() => {
+    let cancelled = false
+    const map = MAPS[activeMapKey] || MAPS.G
+    const extent = getNodeExtent(nodesOnActiveMap)
+
+    async function run() {
+      const sizes = []
+
+      for (const url of map.candidates) {
+        if (!imageSizeCacheRef.current.has(url)) {
+          try {
+            const s = await loadImageSize(url)
+            imageSizeCacheRef.current.set(url, s)
+          } catch {
+            // ignore missing/bad image
+          }
+        }
+
+        const sz = imageSizeCacheRef.current.get(url)
+        if (sz) sizes.push({ url, ...sz })
+      }
+
+      if (sizes.length === 0) return
+
+      const margin = 40
+      const fits = sizes.filter(s => s.w >= extent.maxX + margin && s.h >= extent.maxY + margin)
+      const chosen = (fits.length ? fits : sizes).sort((a, b) => (a.w * a.h) - (b.w * b.h))[0]
+
+      if (cancelled) return
+      setActiveMapUrl(chosen.url)
+      setMapSize({ w: chosen.w, h: chosen.h })
+    }
+
+    run()
+    return () => { cancelled = true }
+  }, [activeMapKey, nodesOnActiveMap])
+
+  const edgesOnActiveMap = useMemo(() => {
+    const nodeSet = new Set(nodesOnActiveMap.map(n => n.id))
+    return edges.filter(e => nodeSet.has(e.from) && nodeSet.has(e.to))
+  }, [edges, nodesOnActiveMap])
+
+  const pathNodeObjects = useMemo(() => {
+    if (pathNodes.length) return pathNodes.filter(Boolean)
+    return path.map(id => nodes.find(n => n.id === id)).filter(Boolean)
+  }, [pathNodes, path, nodes])
+
+  const pathSegmentsOnActiveMap = useMemo(() => {
+    const segs = []
+    for (let i = 0; i < pathNodeObjects.length - 1; i++) {
+      const a = pathNodeObjects[i]
+      const b = pathNodeObjects[i + 1]
+      if (mapKeyFromNode(a) !== activeMapKey) continue
+      if (mapKeyFromNode(b) !== activeMapKey) continue
+      segs.push([[a.y, a.x], [b.y, b.x]])
+    }
+    return segs
+  }, [pathNodeObjects, activeMapKey])
+
   async function handleNodeClick(node) {
     if (!selectMode) return
     if (!["room", "lab", "washroom", "faculty", "stairs"].includes(node.type)) return
@@ -62,14 +178,16 @@ export default function NavMap() {
       setFrom(node)
       setTo(null)
       setPath([])
+      setPathNodes([])
       setError("")
       setStep("to")
-      // stay in select mode so user can immediately pick destination
+      setActiveMapKey(mapKeyFromNode(node))
     } else {
       if (node.id === from?.id) return
       setTo(node)
       setSelectMode(false)
       setStep("from")
+      setActiveMapKey(mapKeyFromNode(node))
       await navigate(from, node)
     }
   }
@@ -82,8 +200,16 @@ export default function NavMap() {
         `http://localhost:5000/api/nodes/navigate?from=${encodeURIComponent(fromNode.id)}&to=${encodeURIComponent(toNode.id)}`
       )
       const data = await res.json()
-      if (data.error) { setError(data.error); setPath([]) }
-      else setPath(data.path)
+      if (data.error) {
+        setError(data.error)
+        setPath([])
+        setPathNodes([])
+      } else {
+        setPath(data.path || [])
+        setPathNodes(data.pathNodes || [])
+        // show the map where the user starts
+        setActiveMapKey(mapKeyFromNode(fromNode))
+      }
     } catch {
       setError("Server error!")
     }
@@ -92,17 +218,17 @@ export default function NavMap() {
 
   function handleClear() {
     setFrom(null); setTo(null)
-    setPath([]); setError("")
+    setPath([]); setPathNodes([]); setError("")
     setStep("from"); setSelectMode(false)
+    setActiveMapKey("G")
   }
 
   function handleSelectToggle() {
     setSelectMode(prev => !prev)
-    // if turning on, reset to from step
     if (!selectMode) {
       setStep("from")
       setFrom(null); setTo(null)
-      setPath([]); setError("")
+      setPath([]); setPathNodes([]); setError("")
     }
   }
 
@@ -118,9 +244,13 @@ export default function NavMap() {
     return false
   }
 
-  const pathStops = path
-    .map(id => nodes.find(n => n.id === id))
+  const pathStops = pathNodeObjects
     .filter(n => n && ["room", "lab", "washroom", "faculty", "stairs"].includes(n.type))
+
+  const pathMapKeys = useMemo(() => {
+    const ks = pathNodeObjects.map(n => mapKeyFromNode(n))
+    return ks.filter((k, i) => k && k !== ks[i - 1])
+  }, [pathNodeObjects])
 
   const searchResults = search.trim()
     ? selectableNodes
@@ -133,18 +263,11 @@ export default function NavMap() {
     : []
 
   useLayoutEffect(() => {
-    if (searchResults.length === 0) {
-      setDropdownRect(null)
-      return
-    }
+    if (searchResults.length === 0) { setDropdownRect(null); return }
     const el = searchGroupRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    setDropdownRect({
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: Math.max(rect.width, 220)
-    })
+    setDropdownRect({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 220) })
   }, [searchResults.length, search])
 
   async function handleDestinationSelect(node) {
@@ -198,30 +321,19 @@ export default function NavMap() {
           <input
             className="search-input"
             type="text"
-            placeholder="Search destination (e.g. LT2, J032)…"
+            placeholder="Search destination…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        {/* Dropdown rendered over map via portal */}
         {searchResults.length > 0 && dropdownRect && createPortal(
           <div
             className="search-results search-results-portal"
-            style={{
-              position: "fixed",
-              top: dropdownRect.top,
-              left: dropdownRect.left,
-              width: dropdownRect.width
-            }}
+            style={{ position: "fixed", top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
           >
             {searchResults.map(node => (
-              <button
-                key={node.id}
-                type="button"
-                className="search-result-row"
-                onClick={() => handleDestinationSelect(node)}
-              >
+              <button key={node.id} type="button" className="search-result-row" onClick={() => handleDestinationSelect(node)}>
                 <span className="search-result-label">{node.label}</span>
                 <span className="search-result-meta">{node.id}</span>
               </button>
@@ -230,22 +342,30 @@ export default function NavMap() {
           document.body
         )}
 
-        {/* Select on Map button — always visible */}
-        <button
-          className={`btn-select ${selectMode ? "active" : ""}`}
-          onClick={handleSelectToggle}
-        >
+        <button className={`btn-select ${selectMode ? "active" : ""}`} onClick={handleSelectToggle}>
           {selectMode
             ? step === "from" ? "🟢 Click your location" : "🔴 Click destination"
             : "📍 Select on Map"}
         </button>
 
-        {/* Clear — only when something is selected */}
         {(from || to || path.length > 0) && (
           <button className="btn-clear" onClick={handleClear}>✕ Clear</button>
         )}
 
-        {/* Status chips */}
+        {/* Floor selector */}
+        <div className="floor-tabs">
+          {Object.values(MAPS).map(m => (
+            <button
+              key={m.key}
+              type="button"
+              className={`floor-tab ${activeMapKey === m.key ? "active" : ""}`}
+              onClick={() => setActiveMapKey(m.key)}
+            >
+              {m.name}
+            </button>
+          ))}
+        </div>
+
         {loading && <div className="status-chip chip-loading">🔍 Finding route...</div>}
         {error && <div className="status-chip chip-error">⚠ {error}</div>}
         {path.length > 0 && !loading && !error && (
@@ -256,7 +376,6 @@ export default function NavMap() {
         )}
       </div>
 
-      {/* Floating hint when in select mode */}
       {selectMode && (
         <div className="select-hint">
           {step === "from" ? "📍 Click anywhere near your starting location" : "🏁 Click anywhere near your destination"}
@@ -266,78 +385,65 @@ export default function NavMap() {
       {/* MAP */}
       <div className={`map-wrap ${selectMode ? "selecting" : ""}`}>
         <MapContainer
+          key={`${activeMapKey}-${mapSize.w}x${mapSize.h}`}
           crs={L.CRS.Simple}
           bounds={bounds}
           style={{ height: "100%", width: "100%" }}
-          maxZoom={2}
-          minZoom={-3}
-          zoom={-2}
+          maxZoom={2} minZoom={-3} zoom={-2}
         >
-          <ImageOverlay url="/ground_floor.png" bounds={bounds} />
+          <FitToBounds bounds={bounds} />
+          <ImageOverlay url={activeMapUrl} bounds={bounds} />
+
           <MapClickHandler
-            nodes={selectableNodes}
+            nodes={nodesOnActiveMap.filter(n => ["room", "lab", "washroom", "faculty", "stairs"].includes(n.type))}
             onNodeClick={handleNodeClick}
             active={selectMode}
           />
 
-          {/* White outline behind path */}
-          {edges.map((edge, i) => {
-            const f = nodes.find(n => n.id === edge.from)
-            const t = nodes.find(n => n.id === edge.to)
-            if (!f || !t || !isEdgeInPath(edge)) return null
-            return (
-              <Polyline
-                key={`outline-${i}`}
-                positions={[[f.y, f.x], [t.y, t.x]]}
-                color="#fff"
-                weight={12}
-                opacity={0.3}
-                lineCap="round"
-                lineJoin="round"
-              />
-            )
-          })}
+          {/* Route outline (computed from pathNodes) */}
+          {pathSegmentsOnActiveMap.map((positions, i) => (
+            <Polyline
+              key={`outline-${i}`}
+              positions={positions}
+              color="#fff"
+              weight={12}
+              opacity={0.28}
+              lineCap="round"
+              lineJoin="round"
+            />
+          ))}
 
-          {/* Blue path */}
-          {edges.map((edge, i) => {
-            const f = nodes.find(n => n.id === edge.from)
-            const t = nodes.find(n => n.id === edge.to)
-            if (!f || !t || !isEdgeInPath(edge)) return null
-            return (
-              <Polyline
-                key={`path-${i}`}
-                positions={[[f.y, f.x], [t.y, t.x]]}
-                color="#4A90E2"
-                weight={8}
-                opacity={0.9}
-                lineCap="round"
-                lineJoin="round"
-              />
-            )
-          })}
+          {/* Route (computed from pathNodes) */}
+          {pathSegmentsOnActiveMap.map((positions, i) => (
+            <Polyline
+              key={`path-${i}`}
+              positions={positions}
+              color="#4A90E2"
+              weight={8}
+              opacity={0.9}
+              lineCap="round"
+              lineJoin="round"
+            />
+          ))}
 
-          {/* From / To markers only */}
-          {from && (
+          {/* Markers only if they belong to active map */}
+          {from && mapKeyFromNode(from) === activeMapKey && (
             <CircleMarker
               center={[from.y, from.x]}
               radius={12}
               pathOptions={{ color: "#fff", fillColor: "#22C55E", fillOpacity: 1, weight: 3 }}
             >
-              <Tooltip permanent direction="top" offset={[0, -14]}>
-                📍 {from.label}
-              </Tooltip>
+              <Tooltip permanent direction="top" offset={[0, -14]}>📍 {from.label}</Tooltip>
             </CircleMarker>
           )}
 
-          {to && (
+          {to && mapKeyFromNode(to) === activeMapKey && (
             <CircleMarker
               center={[to.y, to.x]}
               radius={12}
               pathOptions={{ color: "#fff", fillColor: "#EF4444", fillOpacity: 1, weight: 3 }}
             >
-              <Tooltip permanent direction="top" offset={[0, -14]}>
-                🏁 {to.label}
-              </Tooltip>
+              <Tooltip permanent direction="top" offset={[0, -14]}>🏁 {to.label}</Tooltip>
             </CircleMarker>
           )}
         </MapContainer>
@@ -347,6 +453,22 @@ export default function NavMap() {
       {pathStops.length > 0 && (
         <div className="route-panel">
           <div className="route-title">📍 Route — {pathStops.length} stops</div>
+
+          {pathMapKeys.length > 1 && (
+            <div className="route-floors">
+              {pathMapKeys.map((k, idx) => (
+                <button
+                  key={`${k}-${idx}`}
+                  type="button"
+                  className={`route-floor-chip ${activeMapKey === k ? "active" : ""}`}
+                  onClick={() => setActiveMapKey(k)}
+                >
+                  {(MAPS[k] || { name: k }).name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {pathStops.map((node, i) => {
             const isStart = i === 0
             const isEnd = i === pathStops.length - 1

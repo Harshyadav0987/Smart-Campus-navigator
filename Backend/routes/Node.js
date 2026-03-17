@@ -59,34 +59,3 @@ router.get('/navigate', async (req, res) => {
 })
 
 module.exports = router;
-
-
-// GET /api/navigate?from=J014&to=J025
-router.get('/navigate', async (req, res) => {
-  const { from, to } = req.query
-
-  if (!from || !to) {
-    return res.status(400).json({ error: "Please provide from and to node IDs" })
-  }
-
-  try {
-    // Load all nodes and edges from MongoDB
-    const nodes = await Node.find()
-    const edges = await Edge.find()
-
-    // Run Dijkstra
-    const path = dijkstra(nodes, edges, from, to)
-
-    if (!path) {
-      return res.status(404).json({ error: "No path found between these locations" })
-    }
-
-    // Return path with full node details for frontend to draw
-    const pathNodes = path.map(id => nodes.find(n => n.id === id))
-
-    res.json({ path, pathNodes, totalNodes: path.length })
-
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
