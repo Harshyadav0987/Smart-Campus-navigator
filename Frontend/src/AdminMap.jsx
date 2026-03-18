@@ -2,9 +2,12 @@ import { useState, useEffect } from "react"
 import { MapContainer, ImageOverlay, CircleMarker, Polyline, Tooltip, useMapEvents } from "react-leaflet"
 import L from "leaflet"
 
-const MAP_WIDTH = 4642
-const MAP_HEIGHT = 3924
-const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]]
+const FLOOR_SIZES = {
+  0: { w: 4642, h: 3924 },
+  1: { w: 1742, h: 2442 },
+  2: { w: 1111, h: 912  },
+  3: { w: 681,  h: 852  },
+}
 
 function ClickHandler({ onMapClick }) {
   useMapEvents({ click(e) { onMapClick(e.latlng) } })
@@ -30,7 +33,9 @@ export default function AdminMap() {
   const [edges, setEdges] = useState([])
   const [mode, setMode] = useState("node")
   const [selectedNode, setSelectedNode] = useState(null)
-  const [floor, setFloor] = useState(0)
+    const [floor, setFloor] = useState(0)          // ← ADD THIS LINE
+  const mapSize = FLOOR_SIZES[floor] || FLOOR_SIZES[0]
+  const bounds = [[0, 0], [mapSize.h, mapSize.w]]
 
   const currentNodes = nodes.filter(n => n.floor === floor)
 
@@ -199,11 +204,12 @@ export default function AdminMap() {
       )}
 
       <MapContainer
+        key={`${floor}-${mapSize.w}-${mapSize.h}`}
         crs={L.CRS.Simple}
         bounds={bounds}
         style={{ height: "calc(100vh - 50px)", width: "100%" }}
-        maxZoom={2} minZoom={-3} zoom={-2}
-      >
+        maxZoom={2} minZoom={-3}
+>
         <ImageOverlay url={FLOOR_MAPS[floor]} bounds={bounds} />
 
         <ClickHandler onMapClick={handleMapClick} />
