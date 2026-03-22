@@ -41,10 +41,10 @@ Students and visitors can find the shortest path between any two locations acros
 
 | Floor | Image Size | Nodes |
 |-------|-----------|-------|
-| Ground Floor | 4642×3924 px | ~180 |
+| Ground Floor | 4642×3924 px | ~219 |
 | 1st Floor A | 1742×2442 px | ~120 |
-| 1st Floor B | 1111×912 px | ~80 |
-| 2nd Floor | 681×852 px | ~57 |
+| 1st Floor B | 1111×912 px | ~60 |
+| 2nd Floor | 681×852 px | ~40 |
 
 ---
 
