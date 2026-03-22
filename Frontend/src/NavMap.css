@@ -123,6 +123,15 @@ body {
   transition: border-color 0.2s, background 0.2s;
 }
 
+.step-card.clickable {
+  cursor: pointer;
+}
+
+.step-card.clickable:hover {
+  border-color: rgba(232, 160, 32, 0.4);
+  background: rgba(232, 160, 32, 0.06);
+}
+
 .step-card.active {
   border-color: var(--gold);
   background: var(--gold-dim);

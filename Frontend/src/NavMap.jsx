@@ -256,14 +256,24 @@ export default function NavMap() {
     if (!["room", "lab", "washroom", "faculty", "stairs"].includes(node.type)) return
 
     if (step === "from") {
-      setFrom(node); setTo(null)
+      setFrom(node)
       setPath([]); setPathNodes([]); setError("")
       setStep("to")
+      setSearchFor("to")
       setActiveMapKey(mapKeyFromNode(node))
+      // If TO already exists, re-navigate immediately
+      if (to && to.id !== node.id) {
+        setSelectMode(false)
+        setStep("from")
+        setSearchFor("from")
+        await navigate(node, to)
+      }
     } else {
       if (node.id === from?.id) return
       setTo(node)
-      setSelectMode(false); setStep("from")
+      setSelectMode(false)
+      setStep("from")
+      setSearchFor("from")
       setActiveMapKey(mapKeyFromNode(node))
       await navigate(from, node)
     }
@@ -350,10 +360,19 @@ export default function NavMap() {
 
         {/* From / To cards */}
         <div className="route-cards">
-          <div className={`step-card ${selectMode && step === "from" ? "active" : from ? "filled" : ""}`}>
+          <div
+            className={`step-card clickable ${selectMode && step === "from" ? "active" : from ? "filled" : ""}`}
+            onClick={() => {
+              setStep("from")
+              setSelectMode(true)
+              setSearchFor("from")
+              setSearch("")
+            }}
+            title="Click to change starting point"
+          >
             <div className="step-badge from">A</div>
             <div className="step-text">
-              <span className="step-hint">From</span>
+              <span className="step-hint">From {from ? "· tap to change" : ""}</span>
               <span className={`step-value ${!from ? "placeholder" : ""}`}>
                 {from ? formatLabel(from.label) : "Not selected"}
               </span>
@@ -362,10 +381,19 @@ export default function NavMap() {
 
           <span className="route-arrow">→</span>
 
-          <div className={`step-card ${selectMode && step === "to" ? "active" : to ? "filled" : ""}`}>
+          <div
+            className={`step-card clickable ${selectMode && step === "to" ? "active" : to ? "filled" : ""}`}
+            onClick={() => {
+              setStep("to")
+              setSelectMode(true)
+              setSearchFor("to")
+              setSearch("")
+            }}
+            title="Click to change destination"
+          >
             <div className="step-badge to">B</div>
             <div className="step-text">
-              <span className="step-hint">To</span>
+              <span className="step-hint">To {to ? "· tap to change" : ""}</span>
               <span className={`step-value ${!to ? "placeholder" : ""}`}>
                 {to ? formatLabel(to.label) : "Not selected"}
               </span>
