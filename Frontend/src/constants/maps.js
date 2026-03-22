@@ -10,4 +10,4 @@ export const MAPS = {
 export const SELECTABLE_TYPES = ["room", "lab", "washroom", "faculty", "stairs"]
 
 // API base URL — change this for production
-export const API_BASE = "http://localhost:5000/api"
+export const API_BASE = "https://smart-campus-navigator-qijx.onrender.com/api"
