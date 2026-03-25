@@ -11,16 +11,75 @@ import { FitToBounds } from "./FitToBounds"
 import { MapClickHandler } from "./MapClickHandler"
 
 /**
- * Ensures map rotation and scroll settings apply properly
+ * Ensures map rotation and scroll settings apply properly.
+ * Adds reliable fallback for custom keyboard+drag rotation on laptops.
  */
 function MapSettingsUpdater() {
-  const map = useMap()
+  const map = useMap();
   useEffect(() => {
-    // Force touch and shift rotation to be enabled explicitly
-    if (map.touchRotate && !map.touchRotate.enabled()) map.touchRotate.enable()
-    if (map.shiftKeyRotate && !map.shiftKeyRotate.enabled()) map.shiftKeyRotate.enable()
-  }, [map])
-  return null
+    // Force native touch rotation if capable
+    if (map.touchRotate && !map.touchRotate.enabled()) map.touchRotate.enable();
+
+    const container = map.getContainer();
+    let isRotating = false;
+    let lastMousePos = null;
+
+    const handleMouseDown = (e) => {
+      if ((e.shiftKey || e.altKey) && e.button === 0) {
+        // Right click or shift+click or alt+click starts rotation
+        isRotating = true;
+        map.dragging.disable(); // Prevent default map panning
+        lastMousePos = { x: e.clientX, y: e.clientY };
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    const handleMouseMove = (e) => {
+      if (!isRotating) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = container.getBoundingClientRect();
+      const center = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+
+      // Calculate angles relative to the visual center of the map
+      const angle1 = Math.atan2(lastMousePos.y - center.y, lastMousePos.x - center.x);
+      const angle2 = Math.atan2(e.clientY - center.y, e.clientX - center.x);
+      
+      let angleDiff = (angle2 - angle1) * (180 / Math.PI);
+      
+      if (angleDiff > 180) angleDiff -= 360;
+      if (angleDiff < -180) angleDiff += 360;
+
+      const currentBearing = map.getBearing() || 0;
+      map.setBearing(currentBearing + angleDiff);
+
+      lastMousePos = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUp = (e) => {
+      if (isRotating) {
+        isRotating = false;
+        map.dragging.enable();
+      }
+    };
+
+    // Use capture phase to ensure we intercept the events before Leaflet does
+    container.addEventListener('mousedown', handleMouseDown, { capture: true });
+    window.addEventListener('mousemove', handleMouseMove, { capture: true });
+    window.addEventListener('mouseup', handleMouseUp, { capture: true });
+
+    return () => {
+      container.removeEventListener('mousedown', handleMouseDown, { capture: true });
+      window.removeEventListener('mousemove', handleMouseMove, { capture: true });
+      window.removeEventListener('mouseup', handleMouseUp, { capture: true });
+    };
+  }, [map]);
+  return null;
 }
 
 /**
@@ -60,15 +119,16 @@ export function MapView({
         zoomDelta={0.5}
         wheelPxPerZoomLevel={15}
         scrollWheelZoom={true}
+        boxZoom={false}
         attributionControl={false}
         zoomControl={false}
         rotate={true}
         touchRotate={true}
         shiftKeyRotate={true}
-        rotateControl={{ closeOnZeroBearing: false, position: 'bottomleft' }}
+        rotateControl={{ closeOnZeroBearing: false, position: 'topright' }}
       >
         <MapSettingsUpdater />
-        <ZoomControl position="bottomright" />
+        <ZoomControl position="topright" />
         <FitToBounds bounds={bounds} />
         <ImageOverlay url={activeMap.url} bounds={bounds} />
 
@@ -117,26 +177,6 @@ export function MapView({
           />
         ))}
 
-        {/* Node click targets — invisible normally, ghost in select mode */}
-        {clickableNodes.map((node, i) => (
-          <CircleMarker
-            key={`node-${i}`}
-            center={[node.y, node.x]}
-            radius={selectMode ? 10 : 6}
-            pathOptions={{
-              color:       selectMode ? nodeColor(node.type) : "transparent",
-              fillColor:   selectMode ? nodeColor(node.type) : "transparent",
-              fillOpacity: selectMode ? 0.18 : 0,
-              weight:      selectMode ? 1.5 : 0,
-              opacity:     selectMode ? 0.5 : 0,
-            }}
-            eventHandlers={selectMode ? { click: () => onNodeClick(node) } : {}}
-          >
-            <Tooltip direction="top" offset={[0, -8]}>
-              {formatLabel(node.label)}
-            </Tooltip>
-          </CircleMarker>
-        ))}
 
         {/* FROM marker */}
         {from && mapKeyFromNode(from) === activeMapKey && (

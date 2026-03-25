@@ -76,10 +76,10 @@ export function RoutePanel({ pathStops, pathMapKeys, estimate, activeMapKey, onF
                     }`} />
                     {i < pathStops.length - 1 && (
                       <div 
-                        className={`w-[2px] min-h-[16px] flex-1 my-[3px] ${
+                        className={`min-h-[16px] flex-1 my-[3px] border-l-[2px] ${
                           floorChange 
-                            ? "bg-[repeating-linear-gradient(to_bottom,rgba(232,160,32,0.5)_0px,rgba(232,160,32,0.5)_4px,transparent_4px,transparent_8px)]" 
-                            : "bg-gold/20"
+                            ? "border-dashed border-gold/50" 
+                            : "border-solid border-gold/20"
                         }`}
                       />
                     )}
